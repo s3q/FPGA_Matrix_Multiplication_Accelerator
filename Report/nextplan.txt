@@ -1,0 +1,57 @@
+Yes — that is a **great report comparison**.
+
+Your project becomes much stronger because you are not only showing “FPGA is faster than software,” you are comparing **two hardware architectures**:
+
+```text
+Systolic Array
+vs
+Output-Stationary Parallel Matrix Multiplier
+```
+
+## Why this is good
+
+**Systolic array**
+
+```text
+Lower routing complexity
+Data moves locally PE-to-PE
+Good scalable architecture
+More realistic for large AI/ML accelerators
+But has wavefront fill/drain delay
+```
+
+**Output-stationary parallel**
+
+```text
+Uses many PEs from the first compute cycle
+Very fast for small/medium matrices
+C values stay inside PE accumulators
+But routing is heavier because A and B must be broadcast/read by many PEs
+```
+
+## Best comparison table
+
+| Metric                  | Systolic Array                | Output-Stationary Parallel  |
+| ----------------------- | ----------------------------- | --------------------------- |
+| Data movement           | A shifts right, B shifts down | A/B broadcast to PEs        |
+| PE utilization at start | Gradually increases           | High from first cycle       |
+| 2×2 cycles              | ~4–6                          | ~2–3                        |
+| 8×8 cycles              | ~22–25                        | ~8–10                       |
+| DSP/PB usage            | Up to 64                      | Up to 64                    |
+| Routing                 | Lower                         | Higher                      |
+| Scalability             | Better                        | Harder for large sizes      |
+| Best use                | Large matrices                | Small/medium fixed max size |
+
+## Report title idea
+
+```text
+Comparative FPGA Implementation of Systolic and Output-Stationary Matrix Multiplication Accelerators
+```
+
+or shorter:
+
+```text
+FPGA Matrix Multiplication Accelerator: Systolic vs Output-Stationary Architecture
+```
+
+This is definitely better than only one design.

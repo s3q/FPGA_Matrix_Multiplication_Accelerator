@@ -1,0 +1,45 @@
+matrix_2x3_3x2.json: A=2x3, B=3x2, C=2x2, output-stationary cycles≈K=3, sequential cycles=M*K*N=12
+C:
+   58    64
+  139   154
+
+matrix_3x4_4x3.json: A=3x4, B=4x3, C=3x3, output-stationary cycles≈K=4, sequential cycles=M*K*N=36
+C:
+   30    50    70
+   70   122   174
+   60   100   140
+
+matrix_4x4_4x4.json: A=4x4, B=4x4, C=4x4, output-stationary cycles≈K=4, sequential cycles=M*K*N=64
+C:
+   50    40    30    20
+   72    58    44    30
+   94    76    58    40
+  116    94    72    50
+
+matrix_5x3_3x5.json: A=5x3, B=3x5, C=5x5, output-stationary cycles≈K=3, sequential cycles=M*K*N=75
+C:
+   46    52    58    64    70
+  100   115   130   145   160
+  154   178   202   226   250
+   64    73    82    91   100
+  118   136   154   172   190
+
+matrix_6x6_6x2.json: A=6x6, B=6x2, C=6x2, output-stationary cycles≈K=6, sequential cycles=M*K*N=72
+C:
+  161   182
+  197   224
+  233   266
+  269   308
+  305   350
+  341   392
+
+matrix_8x8_8x8.json: A=8x8, B=8x8, C=8x8, output-stationary cycles≈K=8, sequential cycles=M*K*N=512
+C:
+  224   179   203   215   208   195   171   160
+  271   221   246   261   249   238   209   201
+  318   263   289   307   290   281   247   242
+  365   305   332   353   331   324   285   283
+  412   347   375   399   372   367   323   324
+  459   389   418   445   413   410   361   365
+  506   431   461   491   454   453   399   406
+  553   473   504   537   495   496   437   447
