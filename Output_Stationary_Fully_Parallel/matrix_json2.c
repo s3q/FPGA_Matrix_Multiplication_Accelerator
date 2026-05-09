@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <time.h>
 #include "hps_0.h"
 
 #define HW_REGS_BASE 0xFF200000
@@ -16,10 +17,18 @@
 #define STATUS_ERROR  0x4
 
 #define MAX_N 8
+#define FPGA_CLK_HZ 50000000.0
 
 static volatile uint32_t *reg_ptr(void *base, unsigned int offset)
 {
     return (volatile uint32_t *)((char *)base + offset);
+}
+
+static uint64_t now_ns(void)
+{
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return ((uint64_t)t.tv_sec * 1000000000ULL) + (uint64_t)t.tv_nsec;
 }
 
 static char *read_file(const char *filename)
@@ -129,21 +138,22 @@ static int parse_matrix_after_key(char *json, const char *key,
     return 0;
 }
 
-static void write_matrix_value(volatile uint32_t *addr_reg,
-                               volatile uint32_t *data_reg,
-                               volatile uint32_t *en_reg,
-                               uint32_t addr,
-                               uint32_t value)
+/*
+ * Fast PIO write pulse.
+ * This version intentionally does not use usleep().
+ * It measures the real software + lightweight-bridge register-access overhead.
+ */
+static void write_matrix_value_fast(volatile uint32_t *addr_reg,
+                                    volatile uint32_t *data_reg,
+                                    volatile uint32_t *en_reg,
+                                    uint32_t addr,
+                                    uint32_t value)
 {
     *addr_reg = addr;
     *data_reg = value & 0xFF;
-
     *en_reg = 0;
-    usleep(100);
     *en_reg = 1;
-    usleep(100);
     *en_reg = 0;
-    usleep(100);
 }
 
 static void cleanup(void *virtual_base, int fd)
@@ -153,6 +163,15 @@ static void cleanup(void *virtual_base, int fd)
 
     if (fd >= 0)
         close(fd);
+}
+
+static void print_time_line(const char *name, uint64_t ns)
+{
+    printf("%-24s = %12llu ns  = %12.3f us  = %llu ps\n",
+           name,
+           (unsigned long long)ns,
+           (double)ns / 1000.0,
+           (unsigned long long)(ns * 1000ULL));
 }
 
 int main(int argc, char **argv)
@@ -179,8 +198,25 @@ int main(int argc, char **argv)
     volatile uint32_t *matrix_cycles;
 
     uint32_t status;
+    uint32_t fpga_cycles;
     uint32_t r;
     uint32_t c;
+
+    uint64_t t_total0, t_total1;
+    uint64_t t_a0, t_a1;
+    uint64_t t_b0, t_b1;
+    uint64_t t_start0, t_start1;
+    uint64_t t_wait0, t_wait1;
+    uint64_t t_c0, t_c1;
+
+    uint64_t a_write_ns;
+    uint64_t b_write_ns;
+    uint64_t start_ns;
+    uint64_t wait_ns;
+    uint64_t c_read_ns;
+    uint64_t total_ns;
+
+    double fpga_core_ns;
 
     if (argc >= 2)
         json_file = argv[1];
@@ -244,49 +280,55 @@ int main(int argc, char **argv)
     matrix_data       = reg_ptr(virtual_base, MATRIX_DATA_BASE);
     matrix_cycles     = reg_ptr(virtual_base, MATRIX_CYCLES_BASE);
 
-    printf("Output-Stationary Parallel Matrix Multiplier Test\n");
+    printf("Output-Stationary Fully Parallel Matrix Multiplier Test\n");
     printf("Loaded JSON file: %s\n", json_file);
     printf("A = %u x %u\n", M, K);
     printf("B = %u x %u\n", K, N);
     printf("C = %u x %u\n\n", M, N);
 
+    t_total0 = now_ns();
+
     /* Load A into FPGA: addresses 0..63 */
+    t_a0 = now_ns();
     for (r = 0; r < M; r++) {
         for (c = 0; c < K; c++) {
-            write_matrix_value(matrix_write_addr, matrix_write_data, matrix_write_en,
-                               r * 8 + c, A[r][c]);
+            write_matrix_value_fast(matrix_write_addr, matrix_write_data, matrix_write_en,
+                                    r * 8 + c, A[r][c]);
         }
     }
+    t_a1 = now_ns();
 
     /* Load B into FPGA: addresses 64..127 */
+    t_b0 = now_ns();
     for (r = 0; r < K; r++) {
         for (c = 0; c < N; c++) {
-            write_matrix_value(matrix_write_addr, matrix_write_data, matrix_write_en,
-                               64 + r * 8 + c, B[r][c]);
+            write_matrix_value_fast(matrix_write_addr, matrix_write_data, matrix_write_en,
+                                    64 + r * 8 + c, B[r][c]);
         }
     }
+    t_b1 = now_ns();
 
     /* matrix_dims[3:0] = M, [7:4] = K, [11:8] = N */
     *matrix_dims = (N << 8) | (K << 4) | M;
 
-    printf("Starting FPGA output-stationary multiplication...\n");
+    printf("Starting FPGA output-stationary fully parallel multiplication...\n");
 
     /*
      * For output-stationary-only VHDL:
      * matrix_ctrl bit 0 = start
      * Other bits are ignored.
      */
+    t_start0 = now_ns();
     *matrix_ctrl = 0;
-    usleep(1000);
-
     *matrix_ctrl = 1;
-    usleep(1000);
-
     *matrix_ctrl = 0;
+    t_start1 = now_ns();
 
+    t_wait0 = now_ns();
     while (((*matrix_status) & (STATUS_DONE | STATUS_ERROR)) == 0) {
-        usleep(1000);
+        /* Busy-wait without usleep to measure actual ready latency. */
     }
+    t_wait1 = now_ns();
 
     status = *matrix_status;
 
@@ -298,14 +340,28 @@ int main(int argc, char **argv)
 
     printf("FPGA calculation done.\n\n");
 
+    /* Read C from FPGA */
+    t_c0 = now_ns();
     for (r = 0; r < M; r++) {
         for (c = 0; c < N; c++) {
             uint32_t idx = r * 8 + c;
             *matrix_index = idx;
-            usleep(100);
             C[idx] = (uint16_t)((*matrix_data) & 0xFFFF);
         }
     }
+    t_c1 = now_ns();
+
+    t_total1 = now_ns();
+
+    fpga_cycles = *matrix_cycles;
+    fpga_core_ns = ((double)fpga_cycles / FPGA_CLK_HZ) * 1000000000.0;
+
+    a_write_ns = t_a1 - t_a0;
+    b_write_ns = t_b1 - t_b0;
+    start_ns   = t_start1 - t_start0;
+    wait_ns    = t_wait1 - t_wait0;
+    c_read_ns  = t_c1 - t_c0;
+    total_ns   = t_total1 - t_total0;
 
     printf("Result matrix C = A x B:\n\n");
 
@@ -316,8 +372,25 @@ int main(int argc, char **argv)
         printf("\n");
     }
 
-    printf("\nCycle count = %u\n", *matrix_cycles);
-    printf("Expected compute cycles approximately K = %u\n", K);
+    printf("\n================ Full Timing Analysis ================\n");
+    printf("FPGA core cycles        = %u cycles\n", fpga_cycles);
+    printf("FPGA core time @50MHz   = %.3f ns  = %.0f ps\n",
+           fpga_core_ns, fpga_core_ns * 1000.0);
+    printf("Expected compute cycles approximately K = %u\n\n", K);
+
+    print_time_line("A write time", a_write_ns);
+    print_time_line("B write time", b_write_ns);
+    print_time_line("Start overhead", start_ns);
+    print_time_line("HPS wait for done", wait_ns);
+    print_time_line("C read time", c_read_ns);
+    printf("------------------------------------------------------\n");
+    print_time_line("Total FPGA system time", total_ns);
+
+    printf("\nNotes:\n");
+    printf("- FPGA core time is calculated from the FPGA cycle counter.\n");
+    printf("- Total FPGA system time includes A/B transfer, start, wait, and C readback.\n");
+    printf("- Timing uses Linux CLOCK_MONOTONIC, so ps is converted from ns scale, not true ps precision.\n");
+    printf("- This version removes usleep() from register transfers to avoid artificial delays.\n");
 
     cleanup(virtual_base, fd);
     return 0;
