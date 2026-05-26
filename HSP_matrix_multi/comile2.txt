@@ -1,3 +1,0 @@
-arm-linux-gnueabihf-gcc -std=gnu99 -O3 -mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard hps_matrix_neon_benchmark.c -o hps_matrix_neon_benchmark
-
-./hps_matrix_neon_benchmark matrix_8x8_8x8.json 1000000
