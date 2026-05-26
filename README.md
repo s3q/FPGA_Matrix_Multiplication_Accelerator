@@ -495,6 +495,8 @@ Possible future improvements:
 ## Author
 
 **Salim Amer Alsulaimi**  
+**Abdullah Al Hussaini**  
+**Maher Al Busaidi**  
 Electrical and Computer Engineering Student  
 Sultan Qaboos University
 
